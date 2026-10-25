@@ -1,0 +1,10 @@
+# Copias de seguridad de mis datos (son personales)
+planificador-copia-*.json
+*.json
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Configuración del editor
+.vscode/
