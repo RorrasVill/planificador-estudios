@@ -12,6 +12,12 @@ Planificador personal para estudiantes: organiza tu día a día de forma fácil 
 - **Avisos**: recordatorios por actividad (aviso en la página, sonido y notificación).
 - **Asignaturas**: apuntes, notas con peso, media y nota necesaria para aprobar.
 - **Copia de seguridad**: exportar e importar tus datos en un archivo.
+  
+## Asistente con IA (opcional)
+
+El asistente y las herramientas de estudio con IA usan **Ollama**, que funciona en tu propio ordenador (gratis, sin enviar nada a internet). Si no lo tienes instalado, el resto de la web funciona igual.
+
+Para usarlo: instala [Ollama](https://ollama.com), descarga un modelo (por ejemplo `ollama pull qwen2.5:7b`) y, si el navegador bloquea la conexión, define la variable `OLLAMA_ORIGINS=*` y reinicia Ollama. No funciona en el móvil.
 
 ## Tus datos son tuyos
 
