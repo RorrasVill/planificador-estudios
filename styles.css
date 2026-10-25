@@ -131,3 +131,47 @@ fieldset .chk input { width: auto; margin: 0; }
 .gtxt .progress { margin-top: 4px; }
 dialog label.chk { display: flex; align-items: center; gap: 8px; color: var(--text); }
 dialog label.chk input { width: auto; margin: 0; }
+
+
+/* ===== Versión para móvil (pantallas estrechas) =====
+   Menú de pestañas abajo, cabecera compacta, mes con puntos y semana con desplazamiento. */
+@media (max-width: 700px) {
+  .top { position: static; padding: 8px 10px; gap: 6px; }
+  .brand { flex: 1 1 100%; font-size: 1rem; }
+  .top > button { font-size: .8rem; padding: 5px 9px; }
+
+  /* Menú Hoy / Mes / Semana / Asignaturas / Metas, fijo abajo */
+  #nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 95; flex: none !important; flex-wrap: nowrap !important;
+         gap: 2px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line); }
+  #nav button { flex: 1 1 0; min-width: 0; padding: 9px 1px; font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  main { padding: 12px 10px 150px; }
+  .upnext { margin: 8px 10px 0; padding: 8px 12px; font-size: .9rem; }
+  .card { padding: 12px; }
+  .grid2 { grid-template-columns: 1fr; gap: 12px; }
+  .toolbar { gap: 8px; }
+  .toolbar h2 { font-size: 1.05rem; flex: 1 1 100%; min-width: 0; }
+  .item .time { min-width: 78px; font-size: .9rem; }
+
+  /* Lo flotante sube para no tapar el menú de abajo */
+  #ai-dock { bottom: calc(64px + env(safe-area-inset-bottom)) !important; }
+  #toasts { right: 10px; left: 10px; bottom: calc(130px + env(safe-area-inset-bottom)); max-width: none; }
+
+  /* Mes: las actividades salen como puntos de color */
+  .cell { min-height: 58px; padding: 2px; }
+  .cell .num { font-size: .8rem; padding: 1px 5px; }
+  .chip { display: inline-block; width: 8px; height: 8px; padding: 0; margin: 1px; border-radius: 50%; font-size: 0; vertical-align: middle; }
+  .more { font-size: .65rem; padding-left: 2px; }
+  .month .dow { padding: 6px 0; font-size: .62rem; overflow: hidden; }
+
+  /* Semana: se desplaza hacia los lados dentro de su cuadro */
+  .wk-head, .wk-body { grid-template-columns: 44px repeat(7, minmax(92px, 1fr)); min-width: 700px; }
+  .week { max-height: 62vh; }
+
+  /* Asignaturas y metas */
+  .metas-grid { grid-template-columns: 1fr !important; }
+
+  /* Letra de 16 px en los campos: evita que el móvil haga zoom al escribir */
+  input, select, textarea { font-size: 16px; }
+  dialog { max-width: 94vw; }
+}
