@@ -55,6 +55,7 @@
         <select id="ev-repeat">
           <option value="none">No se repite</option>
           <option value="weekly">Cada semana</option>
+          <option value="yearly">Cada año (cumpleaños, festivos…)</option>
         </select>
       </label>
     </div>
@@ -76,6 +77,14 @@
       <label class="chk"><input type="checkbox" name="rem" value="30"> 30 minutos antes</label>
       <label class="chk"><input type="checkbox" name="rem" value="15"> 15 minutos antes</label>
       <label class="chk"><input type="checkbox" name="rem" value="start"> Cuando empiece</label>
+    </fieldset>
+    <fieldset>
+      <legend>Color</legend>
+      <label class="chk"><input type="checkbox" id="ev-color-on"> Usar un color propio (si no, el de la asignatura)</label>
+      <div id="ev-color-opts" style="display:none">
+        <input type="color" id="ev-color" value="#8b5cf6" style="width:60px;height:36px;padding:2px">
+        <label class="chk"><input type="checkbox" id="ev-color-all"> Aplicarlo a todas las actividades del mismo tipo (p. ej. todo el Estudio)</label>
+      </div>
     </fieldset>
     <label>Notas
       <textarea id="ev-notes" rows="2" placeholder="Opcional"></textarea>
