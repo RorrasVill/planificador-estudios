@@ -7,7 +7,7 @@
    3) Buscador (botón "Buscar" o tecla "/").
    4) Festivos y vacaciones (las clases que se repiten no salen esos días).
    Se carga el ÚLTIMO (después de estudio.js).
-   Datos: S.holidays = [{ id, name, from, to, kind: 'festivo'|'vacaciones'|'sinclase' }]
+   Datos: S.holidays = [{ id, name, from, to, kind: 'festivo'|'vacaciones'|'sinclase', yearly: true|false }]
    ========================================================= */
 (function () {
   const q = id => document.getElementById(id);
@@ -23,37 +23,73 @@
      --------------------------------------------------------- */
   const KINDS = { festivo: ['🎉', 'Festivo'], vacaciones: ['🏖️', 'Vacaciones'], sinclase: ['⛔', 'Sin clase'] };
   const holidays = () => (S.holidays = Array.isArray(S.holidays) ? S.holidays : []);
-  const holidayOn = ds => holidays().find(h => h.from <= ds && ds <= (h.to || h.from));
+  // Pone el año `y` a una fecha 'YYYY-MM-DD' (el 29 de febrero pasa al 28 si ese año no es bisiesto)
+  const withYear = (ds, y) => {
+    const [, m, d] = ds.split('-').map(Number);
+    const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+    return `${y}-${pad(m)}-${pad(m === 2 && d === 29 && !leap ? 28 : d)}`;
+  };
+  // ¿Cae `ds` dentro de este festivo? Si se repite cada año, se mira el mismo rango en el año de `ds` y en el anterior
+  // (el anterior sirve para rangos que cruzan de año, como las vacaciones del 20 dic al 7 ene)
+  const inHoliday = (h, ds) => {
+    const to = h.to || h.from;
+    if (h.from <= ds && ds <= to) return true;
+    if (!h.yearly) return false;
+    const y = Number(ds.slice(0, 4)), y0 = Number(h.from.slice(0, 4)), span = Number(to.slice(0, 4)) - y0;
+    return [y - 1, y].some(ys => ys >= y0 && withYear(h.from, ys) <= ds && ds <= withYear(to, ys + span));
+  };
+  const holidayOn = ds => holidays().find(h => inHoliday(h, ds));
   const kindIcon = h => (KINDS[h.kind] || KINDS.festivo)[0];
 
-  // Esos días desaparecen las clases que se repiten cada semana (las actividades sueltas se mantienen)
+  // Esos días desaparecen las clases que se repiten cada semana (las actividades sueltas y las anuales se mantienen)
   const prevOcc = occurrencesOn;
   occurrencesOn = function (ds) {
     const list = prevOcc(ds);
     return holidayOn(ds) ? list.filter(o => o.repeat !== 'weekly') : list;
   };
 
-  const NACIONALES = [
-    ['2026-01-01', 'Año Nuevo'], ['2026-01-06', 'Reyes'], ['2026-04-03', 'Viernes Santo'], ['2026-05-01', 'Día del Trabajo'],
-    ['2026-08-15', 'Asunción'], ['2026-10-12', 'Fiesta Nacional'], ['2026-11-01', 'Todos los Santos'],
-    ['2026-12-06', 'Constitución'], ['2026-12-08', 'Inmaculada'], ['2026-12-25', 'Navidad'],
-    ['2027-01-01', 'Año Nuevo'], ['2027-01-06', 'Reyes'], ['2027-03-26', 'Viernes Santo'], ['2027-05-01', 'Día del Trabajo'],
-    ['2027-08-15', 'Asunción'], ['2027-10-12', 'Fiesta Nacional'], ['2027-11-01', 'Todos los Santos'],
-    ['2027-12-06', 'Constitución'], ['2027-12-08', 'Inmaculada'], ['2027-12-25', 'Navidad']
+  // Festivos nacionales de fecha fija (mes-día): se guardan una vez y se repiten solos cada año
+  const FIJOS = [
+    ['01-01', 'Año Nuevo'], ['01-06', 'Reyes'], ['05-01', 'Día del Trabajo'], ['08-15', 'Asunción'],
+    ['10-12', 'Fiesta Nacional'], ['11-01', 'Todos los Santos'], ['12-06', 'Constitución'],
+    ['12-08', 'Inmaculada'], ['12-25', 'Navidad']
   ];
+  // El Viernes Santo cambia cada año: se calcula a partir del Domingo de Pascua (algoritmo de Meeus/Jones/Butcher)
+  function easter(y) {
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+    const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(y, month - 1, day);
+  }
+  const viernesSanto = y => fmt(addDays(easter(y), -2));
   function addNationalHolidays() {
     let n = 0;
-    NACIONALES.forEach(([d, name]) => {
-      if (holidays().some(h => h.from === d)) return;
-      holidays().push({ id: uid(), name, from: d, to: '', kind: 'festivo' });
+    const y0 = new Date().getFullYear();
+    FIJOS.forEach(([md, name]) => {
+      // si ya estaba añadido de antes (un año concreto), se conserva el más antiguo, se marca "cada año" y se quitan los repetidos
+      const same = holidays().filter(h => h.from.slice(5) === md && norm(h.name) === norm(name))
+        .sort((a, b) => a.from.localeCompare(b.from));
+      if (same.length) {
+        if (!same[0].yearly) { same[0].yearly = true; n++; }
+        same.slice(1).forEach(h => { if (!h.yearly && !h.to && h.kind === 'festivo') S.holidays = holidays().filter(x => x !== h); });
+        return;
+      }
+      holidays().push({ id: uid(), name, from: `${y0}-${md}`, to: '', kind: 'festivo', yearly: true });
       n++;
     });
+    for (let y = y0; y <= y0 + 9; y++) {
+      const d = viernesSanto(y);
+      if (holidays().some(h => h.from === d)) continue;
+      holidays().push({ id: uid(), name: 'Viernes Santo', from: d, to: '', kind: 'festivo' });
+      n++;
+    }
     return n;
   }
-  function addHoliday(name, from, to, kind) {
+  function addHoliday(name, from, to, kind, yearly) {
     if (!name || !from) throw new Error('faltan el nombre o la fecha');
     if (to && to < from) throw new Error('la fecha final es anterior a la inicial');
-    holidays().push({ id: uid(), name: String(name).trim().slice(0, 60), from, to: to || '', kind: KINDS[kind] ? kind : 'festivo' });
+    holidays().push({ id: uid(), name: String(name).trim().slice(0, 60), from, to: to || '', kind: KINDS[kind] ? kind : 'festivo', yearly: !!yearly });
   }
   const shortD = ds => parse(ds).toLocaleDateString('es-ES');
 
@@ -61,7 +97,8 @@
     const list = holidays().slice().sort((a, b) => a.from.localeCompare(b.from));
     q('hol-list').innerHTML = list.map(h => `<div class="hol-row">
       <span>${kindIcon(h)} <b>${esc(h.name)}</b> <span class="muted">${shortD(h.from)}${h.to && h.to !== h.from ? ' – ' + shortD(h.to) : ''}</span></span>
-      <button type="button" class="small ghost" data-hdel="${h.id}" title="Quitar">✕</button></div>`).join('')
+      <span class="hol-btns"><button type="button" class="small ghost" data-hyear="${h.id}" title="Pulsa para cambiar entre «cada año» y «solo esa vez»">${h.yearly ? '🔁 cada año' : 'solo esa vez'}</button>
+      <button type="button" class="small ghost" data-hdel="${h.id}" title="Quitar">✕</button></span></div>`).join('')
       || '<p class="muted">Aún no has añadido festivos ni vacaciones.</p>';
   }
 
@@ -75,7 +112,7 @@
   function applyChange(id, occ, ch, mode) {
     const e = S.events.find(x => x.id === id);
     if (!e) return false;
-    if (e.repeat === 'weekly' && mode === 'one') {
+    if ((e.repeat === 'weekly' || e.repeat === 'yearly') && mode === 'one') {
       e.skip = e.skip || [];
       if (!e.skip.includes(occ)) e.skip.push(occ);
       const copy = { ...e, id: uid(), repeat: 'none', until: '', date: ch.date, start: ch.start, duration: ch.duration };
@@ -169,7 +206,11 @@
     };
     if (!ev || (ch.date === a.occ && ch.start === ev.start && ch.duration === ev.duration)) { render(); return; }
     let mode;
-    if (ev.repeat === 'weekly') {
+    if (ev.repeat === 'yearly') {
+      // un cumpleaños o festivo anual: arrastrar mueve solo ese año
+      if (!confirm(`Esta actividad se repite cada año.\n\n¿Mover SOLO la del ${shortD(a.occ)}?\n(Las de otros años no cambian)`)) { render(); return; }
+      mode = 'one';
+    } else if (ev.repeat === 'weekly') {
       if (confirm(`Esta actividad se repite cada semana.\n\n¿Cambiar SOLO el ${shortD(a.occ)}?\n(Aceptar = solo ese día · Cancelar = más opciones)`)) mode = 'one';
       else if (confirm('¿Cambiar TODA la serie (todas las semanas)?\n(Aceptar = toda la serie · Cancelar = no cambiar nada)')) mode = 'all';
       else { render(); return; }
@@ -190,7 +231,7 @@
   // Actividades sueltas de la semana que empieza en `monday` (las series y los exámenes no se copian)
   function weekCopyable(monday) {
     const a = fmt(monday), b = fmt(addDays(monday, 6));
-    return S.events.filter(e => e.repeat !== 'weekly' && e.cat !== 'examen' && e.date >= a && e.date <= b);
+    return S.events.filter(e => e.repeat !== 'weekly' && e.repeat !== 'yearly' && e.cat !== 'examen' && e.date >= a && e.date <= b);
   }
   function copyWeekEvents(monday, n) {
     const src = weekCopyable(monday);
@@ -233,6 +274,9 @@
     refreshSubjOptions(e.subjectId);
     q('ev-scope').value = e.scope || 'all';
     q('ev-notes').value = e.notes || '';
+    q('ev-color-on').checked = !!e.color;
+    q('ev-color').value = e.color || '#8b5cf6';
+    q('ev-color-opts').style.display = e.color ? '' : 'none';
     document.querySelectorAll('input[name=rem]').forEach(c => { c.checked = (e.remind || []).includes(c.value); });
     updateEndHint();
     q('ev-date').focus();
@@ -260,7 +304,7 @@
       if (!match([e.title, e.notes, subjName(e.subjectId), CATS[e.cat] && CATS[e.cat].n].join(' '))) return;
       out.push({
         icon: e.cat === 'examen' ? '📝' : '📅', title: e.title,
-        sub: `${shortD(e.date)} · ${e.start}${e.repeat === 'weekly' ? ' · cada semana' : ''}${subjName(e.subjectId) ? ' · ' + subjName(e.subjectId) : ''}`,
+        sub: `${shortD(e.date)} · ${e.start}${e.repeat === 'weekly' ? ' · cada semana' : e.repeat === 'yearly' ? ' · cada año' : ''}${subjName(e.subjectId) ? ' · ' + subjName(e.subjectId) : ''}`,
         go: () => { ui.week = mondayOf(parse(e.date)); ui.view = 'week'; render(); openEvent(e.id, e.date); }
       });
     });
@@ -336,7 +380,7 @@
     <dialog id="holDlg">
       <form id="holForm">
         <h2>🏖️ Festivos y vacaciones</h2>
-        <p class="hint">Esos días no salen las clases que se repiten cada semana. Las actividades sueltas sí se mantienen.</p>
+        <p class="hint">Esos días no salen las clases que se repiten cada semana. Las actividades sueltas sí se mantienen. Los marcados con 🔁 se repiten solos cada año.</p>
         <div id="hol-list"></div>
         <div class="row">
           <label>Nombre <input id="hol-name" required maxlength="60" placeholder="Ej. Vacaciones de Navidad"></label>
@@ -349,8 +393,9 @@
           <label>Desde <input type="date" id="hol-from" required></label>
           <label>Hasta (opcional) <input type="date" id="hol-to"></label>
         </div>
+        <label class="chk"><input type="checkbox" id="hol-yearly" checked> Se repite cada año (Navidad, fiestas fijas…)</label>
         <div class="actions">
-          <button type="button" class="ghost" id="hol-es" title="Año Nuevo, Reyes, Viernes Santo, 1 de mayo, 15 de agosto, 12 de octubre, 1 de noviembre, 6 y 8 de diciembre y Navidad (2026-2027)">Añadir festivos nacionales</button>
+          <button type="button" class="ghost" id="hol-es" title="Año Nuevo, Reyes, 1 de mayo, 15 de agosto, 12 de octubre, 1 de noviembre, 6 y 8 de diciembre y Navidad (se repiten cada año) y el Viernes Santo de los próximos 10 años">Añadir festivos nacionales</button>
           <span class="spacer"></span>
           <button type="button" class="ghost" data-x>Cerrar</button>
           <button type="submit" class="primary">Añadir</button>
@@ -380,6 +425,7 @@
     #hol-list { max-height: 190px; overflow: auto; margin-bottom: 12px; }
     .hol-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
     .hol-row button { border: 0; padding: 2px 8px; }
+    .hol-btns { display: flex; gap: 4px; white-space: nowrap; }
     #searchDlg { width: min(640px, 94vw); }
     #sr-in { margin-bottom: 10px; font-size: 1.05rem; }
     #sr-out { max-height: 55vh; overflow: auto; }
@@ -412,12 +458,18 @@
 
   q('holForm').addEventListener('submit', ev => {
     ev.preventDefault();
-    try { addHoliday(q('hol-name').value, q('hol-from').value, q('hol-to').value, q('hol-kind').value); }
+    try { addHoliday(q('hol-name').value, q('hol-from').value, q('hol-to').value, q('hol-kind').value, q('hol-yearly').checked); }
     catch (err) { alert('No se pudo añadir: ' + err.message); return; }
     save(); q('hol-name').value = ''; q('hol-from').value = ''; q('hol-to').value = '';
     holList(); render();
   });
   q('hol-list').addEventListener('click', e => {
+    const yid = e.target.dataset && e.target.dataset.hyear;
+    if (yid) {
+      const h = holidays().find(x => x.id === yid);
+      if (h) { h.yearly = !h.yearly; save(); holList(); render(); }
+      return;
+    }
     const id = e.target.dataset && e.target.dataset.hdel;
     if (!id) return;
     S.holidays = holidays().filter(h => h.id !== id);
@@ -426,7 +478,7 @@
   q('hol-es').addEventListener('click', () => {
     const n = addNationalHolidays();
     save(); holList(); render();
-    toast('🎉 Festivos añadidos', n ? `Se han añadido ${n} festivos nacionales (2026-2027). Añade a mano los de tu comunidad y tu universidad.` : 'Ya estaban todos añadidos.');
+    toast('🎉 Festivos añadidos', n ? `Listo (${n} cambios): los festivos nacionales fijos se repiten cada año y el Viernes Santo está puesto para los próximos 10 años. Añade a mano los de tu comunidad y tu universidad.` : 'Ya estaban todos añadidos.');
   });
 
   q('sr-in').addEventListener('input', runSearch);
