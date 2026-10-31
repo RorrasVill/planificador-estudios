@@ -69,15 +69,26 @@ const fGet = id => tx('readonly', s => s.get(id));
 const fDel = id => tx('readwrite', s => s.delete(id));
 
 // ---------- Actividades ----------
+// ¿Es `ds` el aniversario (mismo mes y día) de la fecha base? El 29 de febrero se celebra el 28 en los años no bisiestos.
+function sameAnniv(base, ds) {
+  const [, bm, bd] = base.split('-').map(Number), [y, m, d] = ds.split('-').map(Number);
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  if (bm === 2 && bd === 29 && !leap) return m === 2 && d === 28;
+  return bm === m && bd === d;
+}
+const isRepeating = e => e && (e.repeat === 'weekly' || e.repeat === 'yearly');
 function occurrencesOn(dateStr) {
   const dow = parse(dateStr).getDay();
   return S.events
-    .filter(e => (e.date === dateStr || (e.repeat === 'weekly' && e.date < dateStr && (!e.until || dateStr <= e.until) && parse(e.date).getDay() === dow))
+    .filter(e => (e.date === dateStr
+        || (e.repeat === 'weekly' && e.date < dateStr && (!e.until || dateStr <= e.until) && parse(e.date).getDay() === dow)
+        || (e.repeat === 'yearly' && e.date < dateStr && (!e.until || dateStr <= e.until) && sameAnniv(e.date, dateStr)))
       && !(e.skip || []).includes(dateStr))
     .map(e => ({ ...e, occDate: dateStr }))
     .sort((a, b) => toMin(a.start) - toMin(b.start));
 }
-const evColor = e => (getSubj(e.subjectId)?.color) || CATS[e.cat]?.c || '#64748b';
+// Color de una actividad: el suyo propio (si lo tiene) > el de su asignatura > el de su tipo
+const evColor = e => e.color || (getSubj(e.subjectId)?.color) || CATS[e.cat]?.c || '#64748b';
 const evStart = e => dtOf(e.occDate, toMin(e.start));
 const evEnd = e => dtOf(e.occDate, toMin(e.start) + e.duration);
 
@@ -408,7 +419,7 @@ function updateEndHint() {
 }
 ['ev-start', 'ev-dur'].forEach(id => $('#' + id).addEventListener('input', updateEndHint));
 function toggleUntil() {
-  $('#ev-until-wrap').style.display = $('#ev-repeat').value === 'weekly' ? '' : 'none';
+  $('#ev-until-wrap').style.display = ['weekly', 'yearly'].includes($('#ev-repeat').value) ? '' : 'none';
 }
 $('#ev-repeat').addEventListener('change', toggleUntil);
 
@@ -416,7 +427,7 @@ $('#ev-repeat').addEventListener('change', toggleUntil);
 const applyOne = () => $('#ev-apply-wrap').style.display !== 'none' && document.querySelector('input[name=apply]:checked')?.value === 'one';
 function applyChanged() {
   const e = S.events.find(x => x.id === $('#ev-id').value);
-  if (!e || e.repeat !== 'weekly') return;
+  if (!isRepeating(e)) return;
   if (applyOne()) {
     $('#ev-date').value = $('#ev-occ').value;
     $('#ev-repeat').value = 'none';
@@ -446,7 +457,7 @@ function openEvent(id, date, startMin, dur) {
   // Desde la Semana, una actividad nueva es solo de la semana; desde el resto, sale en Mes y Semana
   $('#ev-scope').value = e ? (e.scope || 'all') : (ui.view === 'week' ? 'week' : 'all');
   // Si es una serie, ofrecemos cambiar solo el día pulsado o toda la serie
-  const isSeries = !!(e && e.repeat === 'weekly');
+  const isSeries = isRepeating(e);
   $('#ev-occ').value = isSeries ? (date && date >= e.date ? date : e.date) : '';
   $('#ev-occ-label').textContent = isSeries ? parse($('#ev-occ').value).toLocaleDateString('es-ES') : '';
   $('#ev-apply-wrap').style.display = isSeries ? '' : 'none';
@@ -454,17 +465,24 @@ function openEvent(id, date, startMin, dur) {
   $('#ev-repeat').disabled = false;
   toggleUntil();
   $('#ev-notes').value = e?.notes || '';
+  $('#ev-color-on').checked = !!e?.color;
+  $('#ev-color').value = e?.color || '#8b5cf6';
+  $('#ev-color-all').checked = false;
+  $('#ev-color-opts').style.display = e?.color ? '' : 'none';
   const rem = e ? (e.remind || []) : ['60', 'morning'];
   document.querySelectorAll('input[name=rem]').forEach(c => c.checked = rem.includes(c.value));
   $('#ev-del').style.display = e ? '' : 'none';
   updateEndHint();
   dlg('eventDlg').showModal();
 }
+$('#ev-color-on').addEventListener('change', () => {
+  $('#ev-color-opts').style.display = $('#ev-color-on').checked ? '' : 'none';
+});
 $('#eventForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const one = applyOne(); // true = cambio solo para el día pulsado de una serie
   const repeat = one ? 'none' : $('#ev-repeat').value;
-  const until = repeat === 'weekly' ? $('#ev-until').value : '';
+  const until = (repeat === 'weekly' || repeat === 'yearly') ? $('#ev-until').value : '';
   if (until && until < $('#ev-date').value) {
     alert('La fecha final debe ser igual o posterior a la fecha de inicio.');
     return;
@@ -475,6 +493,7 @@ $('#eventForm').addEventListener('submit', ev => {
     id, title: $('#ev-title').value.trim(), date: $('#ev-date').value, start: $('#ev-start').value,
     duration: Math.max(5, Number($('#ev-dur').value) || 60), cat: $('#ev-cat').value, subjectId: $('#ev-subj').value,
     repeat, until, scope: $('#ev-scope').value, notes: $('#ev-notes').value,
+    color: $('#ev-color-on').checked ? $('#ev-color').value : '',
     remind: [...document.querySelectorAll('input[name=rem]:checked')].map(c => c.value)
   };
   if (one) {
@@ -489,6 +508,10 @@ $('#eventForm').addEventListener('submit', ev => {
     const i = S.events.findIndex(x => x.id === id);
     if (i >= 0) { if (S.events[i].skip) data.skip = S.events[i].skip; S.events[i] = data; } else S.events.push(data);
   }
+  // "Aplicar a todas las del mismo tipo": pinta con ese color todas las actividades de ese tipo (p. ej. todo el Estudio)
+  if ($('#ev-color-on').checked && $('#ev-color-all').checked) {
+    S.events.forEach(x => { if (x.cat === data.cat) x.color = data.color; });
+  }
   // permitir que los avisos de una actividad editada vuelvan a saltar
   const f = fired(); Object.keys(f).forEach(k => { if (k.startsWith(id + '|')) delete f[k]; }); saveFired(f);
   save(); dlg('eventDlg').close(); render(); checkReminders();
@@ -501,7 +524,7 @@ $('#ev-del').addEventListener('click', () => {
     e.skip = e.skip || [];
     if (!e.skip.includes(occ)) e.skip.push(occ);
   } else {
-    if (!confirm('¿Eliminar esta actividad' + (e && e.repeat === 'weekly' ? ' (y todas sus repeticiones)' : '') + '?')) return;
+    if (!confirm('¿Eliminar esta actividad' + (isRepeating(e) ? ' (y todas sus repeticiones)' : '') + '?')) return;
     S.events = S.events.filter(x => x.id !== $('#ev-id').value);
   }
   save(); dlg('eventDlg').close(); render();
